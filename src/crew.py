@@ -17,14 +17,8 @@ from tools.guardrails import (
     review_output_guardrail
 )
 
-from crew_ai_engg_team.tools.sandboxed_test_runner import (
+from tools.sandboxed_test_runner import (
     SandboxedTestRunner,
-)
-
-from crew_ai_engg_team.guardrails import (
-    GuardedPythonTask,
-    python_code_guardrail,
-    review_output_guardrail,
 )
 
 test_runner_tool = SandboxedTestRunner()
@@ -171,9 +165,6 @@ class EngineeringTeam:
         if not frontend_code.exists():
             tasks.append(self.frontend_task())
 
-        if not test_account_manager.exists():
-            tasks.append(self.test_task())
-
         tasks.extend(
             [
                 # self.requirements_task(),
@@ -183,6 +174,14 @@ class EngineeringTeam:
                 self.review_task(),
                 self.backend_repair_task(),
                 self.frontend_repair_task(),
+            ]
+        )
+
+        if not test_account_manager.exists():
+            tasks.append(self.test_task())
+
+        tasks.extend(
+            [
                 #self.test_task(),
                 self.test_execution_task(),
                 self.test_fix_task(),

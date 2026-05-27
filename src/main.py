@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-from crew_ai_engg_team.crew import EngineeringTeam
-from crew_ai_engg_team.tools import verify_final_artifacts
+from crew import EngineeringTeam
+from tools import verify_final_artifacts
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 

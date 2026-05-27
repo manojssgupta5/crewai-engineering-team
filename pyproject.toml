@@ -1,20 +1,14 @@
 [project]
-name = "crew_ai_engg_team"
+name = "crewai_engineering_team"
 version = "1.0.0"
-description = "Production-oriented software engineering crew with guarded output and isolated verification"
-authors = [{ name = "Community", email = "community@example.com" }]
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "crewai[tools]>=0.108.0,<0.109.0",
 ]
 
-[project.optional-dependencies]
-ui = ["gradio>=5.22.0"]
-dev = ["pytest>=8.0.0"]
-
 [project.scripts]
-crew_ai_engg_team = "crew_ai_engg_team.main:run"
-run_crew = "crew_ai_engg_team.main:run"
+crewai_engineering_team = "main:run"
+run_crew = "main:run"
 
 [build-system]
 requires = ["hatchling"]
@@ -22,6 +16,12 @@ build-backend = "hatchling.build"
 
 [tool.crewai]
 type = "crew"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
