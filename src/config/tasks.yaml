@@ -19,15 +19,91 @@ requirements_task:
 
 design_task:
   description: >
-    Design `{module_name}.py` with `{class_name}` as its only primary class,
-    using the PRD from context. Specify state, method signatures, validation rules,
-    error behavior, and `get_share_price`. Map every public method to an FR number.
-    Do not add features and do not write implementation code.
+    Produce an implementation-oriented design specification from requirements_task output.
+
+    ABSOLUTE RULE: Do NOT write any Python code or code blocks anywhere in this document.
+    Express all contracts, signatures, and state as structured prose and tables only.
+    The backend engineer writes the code. Your job is to specify what to build.
+
+    Follow these phases strictly.
+
+    Phase 1: Requirement Extraction
+    Parse every functional requirement, technical constraint, and acceptance criterion.
+    Extract all explicit system behaviors. Do not merge or summarize distinct requirements.
+
+    Phase 2: Obligation Synthesis
+    For each requirement, produce a table row covering:
+    - Required public method name and purpose
+    - Internal state it reads or mutates
+    - Calculations required
+    - Validations that must be enforced BEFORE any mutation
+    - Exceptions/errors raised on validation failure (use custom exception names,
+      never shadow Python built-ins such as ValueError — use InvalidAmountError,
+      InvalidSymbolError, etc.)
+    - Reporting outputs
+
+    Implied obligations must be made explicit:
+    - Transaction history requires a stored list of transaction records
+    - Portfolio value requires per-symbol valuation logic
+    - Profit/loss requires tracking total deposited funds as a running total
+
+    Phase 3: API Contract Table
+    Produce ONE table per class with these columns:
+    Method | Parameters | Returns | Raises | Pre-conditions | Post-conditions | Side-effects
+
+    Rules for this table:
+    - Express signatures as: method_name(param: type, ...) -> return_type
+    - List every custom exception that can be raised and the exact condition
+    - Pre-conditions are checked BEFORE mutation; post-conditions are the guaranteed
+      state AFTER a successful call
+    - No code. No Python syntax. Use plain English and type names only.
+
+    Phase 4: State Model
+    Define each class with:
+    - Name and purpose
+    - Every instance variable: name, type, initial value, invariant
+    - Relationships between classes
+
+    Phase 5: Architecture and Data Flow
+    Describe in prose:
+    - How each operation flows from entry point to state mutation
+    - Where validation occurs relative to mutation
+    - How transaction records are created and stored
+    - How portfolio value and profit/loss are calculated at report time
+
+    Phase 6: Traceability Matrix
+    Table mapping: Requirement ID | Obligation | Responsible method | Expected test scenarios
+
+    Every acceptance criterion must appear in this table.
+
+    Phase 7: Testing Obligations
+    List concrete test scenarios covering:
+    - Happy paths for every public method
+    - Every validation failure path (negative amount, insufficient funds/shares,
+      invalid symbol, unknown account)
+    - State transition correctness (buy then sell, deposit then withdraw)
+    - Reporting accuracy (portfolio value, profit/loss calculation)
+    - Edge cases (sell all shares removes symbol from holdings, zero-holding state)
+
+    Critical Rules:
+    - NEVER write Python code or fenced code blocks.
+    - NEVER mark any FR-006 sub-requirement as out of scope.
+      Transaction history storage IS required.
+    - Do not collapse distinct reporting requirements into a single bullet.
+    - Ensure every downstream agent can implement without re-reading the PRD.
+
+    CRITICAL SIGNATURE RULES:
+    - Every method in the API Contract Table MUST specify exact Python types
+      for every parameter (str, float, int — never "user data", "dict", or vague types).
+    - create_account MUST accept a plain str name, never a dict or object.
+    - Ambiguous signatures will cause backend/test contract mismatches and will be rejected.
+    - Both backend_task and test_task will implement directly from this document
+      without re-reading the PRD — so every contract must be self-contained and exact.
+
   expected_output: >
-    A concise Markdown module design with requirement mappings and testable invariants.
+    A traceable implementation-oriented technical design specification in Markdown.
+    Contains NO Python code. All contracts expressed as structured tables and prose.
   agent: engineering_lead
-  context:
-    - requirements_task
   output_file: output/design.md
 
 backend_task:
@@ -37,132 +113,111 @@ backend_task:
     required method fully, validate invalid operations, and implement deterministic
     `get_share_price(symbol: str) -> float` for the required symbols.
 
+    MANDATORY NAMING RULES — a guardrail will hard-reject the file if either is violated:
+    1. The file MUST define `class {class_name}:` at the TOP LEVEL using EXACTLY
+       this PascalCase name. No aliases, no lowercase variants, no renaming.
+    2. Every public method documented in the design MUST appear inside that class.
+
     Output one complete Python source file only: no Markdown fences, explanations,
     TODOs, placeholders, ellipses, or executable main block.
   expected_output: >
     Valid complete Python source code for `{module_name}.py`.
   agent: backend_engineer
-  context:
-    - design_task
   output_file: output/{module_name}.py
 
 frontend_task:
   description: >
-    Write `app.py`, a minimal optional Gradio demonstration that imports
-    `{class_name}` from `{module_name}` and exposes the approved core actions.
-    Keep all accounting logic in the backend. Do not launch the app at import time;
-    an `if __name__ == "__main__":` launch guard is permitted.
+    Write `app.py`, a minimal Gradio UI that wraps the already-implemented backend.
 
-    Output one complete Python source file only with no Markdown wrapping.
+    ABSOLUTE RULES — a guardrail will hard-reject violations:
+    1. Your FIRST line of logic must be:
+       from {module_name} import {class_name}
+    2. Do NOT define ANY of the following — they already exist in {module_name}.py
+       and must be imported, never redefined:
+       - Any exception class (InvalidNameError, InvalidAmountError,
+         InsufficientFundsError, InvalidSymbolError, InsufficientSharesError,
+         or any other *Error class)
+       - TransactionRecord or any other data class
+       - AccountManager or any manager/service class
+       - get_share_price or any pricing function
+       - Any method that performs business logic
+    3. Do NOT copy or reimplement ANY logic from {module_name}.py.
+       If you find yourself writing validation, calculation, or state mutation —
+       STOP. That belongs in the backend. Delegate to {class_name} instead.
+    4. Do NOT launch the app at import time.
+       Use: if __name__ == '__main__': demo.launch()
+
+    ONLY allowed in app.py:
+    - The import line: from {module_name} import {class_name}
+    - One global {class_name} instance
+    - Thin wrapper functions that call {class_name} methods and catch exceptions
+    - Gradio UI component definitions
+    - The __main__ guard
+
+    What to build:
+    - Expose tabs or sections for: create account, deposit, withdraw,
+      buy shares, sell shares, get report.
+    - All inputs and outputs via Gradio components only.
+    - Catch and display exceptions from the backend as plain error strings.
+    - Use a Dropdown with choices [AAPL, TSLA, GOOGL] for symbol inputs.
+
+    Output one complete Python source file only. No Markdown fences or explanations.
   expected_output: >
-    Valid complete Python source code for a minimal Gradio app.
+    Valid complete Python source code for a Gradio app that imports and delegates
+    entirely to {module_name}.{class_name}. Contains no reimplemented backend logic.
   agent: frontend_engineer
-  context:
-    - design_task
-    - backend_task
   output_file: output/app.py
-
-review_task:
-  description: >
-    Review the code files generated by the previous tasks.
-    
-    CRITICAL STRUCTURE REQUIREMENTS:
-    Your final markdown report MUST strictly include the following three phrases as section headings. Do not modify, reword, or skip them:
-    - ## Summary
-    - ## Blocking Issues
-    - ## Non-Blocking Issues
-
-    CRITICAL DECISION REQUIREMENTS:
-    You must explicitly state exactly one of these decision tokens in your text:
-    - decision: REPAIR_REQUIRED
-    - decision: NO_CHANGES_REQUIRED
-
-    CRITICAL CONDITIONAL LAYOUTS:
-    1. If your decision is REPAIR_REQUIRED, you MUST include a list under '## Blocking Issues' containing these exact lowercase keyword labels:
-       - **severity**: [High/Medium/Low]
-       - **artifact**: [File path/Name]
-       - **repair**: [Instructions on how to fix it]
-
-    2. If your decision is NO_CHANGES_REQUIRED, you MUST explicitly include this exact phrase anywhere in your report:
-       "static review found no defects"
-
-    Make sure every single required keyword and section header listed above is present in your output text.
-  expected_output: >
-    A formal markdown code review report containing the exact section headers (Summary, Blocking Issues, Non-Blocking Issues) and matching decision validation tokens.
-  agent: reviewer
-  context:
-    - requirements_task
-    - design_task
-    - backend_task
-    - frontend_task
-  output_file: output/review.md
-
-backend_repair_task:
-  description: >
-    Fix the review comments from reviewer feedback and do backend implementation.
-    Preserve architecture unless correction is required.
-    Output one corrected complete Python source file only.
-  expected_output: >
-    Corrected backend implementation.
-  agent: fix_review_engineer
-  context:
-    - design_task
-    - review_task
-    - backend_task
-
-  output_file: output/{module_name}.py
-
-frontend_repair_task:
-  description: >
-    Repair frontend implementation using review feedback.
-    Output one corrected frontend implementation only.
-  expected_output: >
-    Corrected frontend implementation.
-  agent: frontend_engineer
-  context:
-    - design_task
-    - frontend_task
-    - review_task
 
 test_task:
   description: >
-    Write deterministic unittest tests for the repaired backend module.
-    Cover:
-    - account creation
-    - deposits
-    - withdrawals
-    - buy/sell operations
-    - holdings
-    - valuation
+    Write deterministic unittest tests for the backend module ONLY.
+
+    ABSOLUTE IMPORT RULES — violations will cause test collection to fail:
+    1. Only allowed imports are:
+       - import unittest
+       - from {module_name} import {class_name}
+       - Standard library modules only (datetime, decimal, etc.)
+    2. Do NOT import gradio, requests, flask, or ANY third-party package.
+    3. Do NOT import app, app.py, or any frontend module.
+    4. Do NOT import anything that requires a network, UI, or external service.
+    5. The test file must run successfully with:
+       python -m unittest test_{module_name} --network none
+
+    WHAT TO TEST — only the backend {class_name} public API:
+    - account creation (valid name, empty name)
+    - deposits (valid amount, zero, negative)
+    - withdrawals (sufficient funds, insufficient funds)
+    - buy/sell operations (valid, insufficient funds, insufficient shares)
+    - holdings state after buy and sell
+    - valuation and profit/loss in get_report
     - unsupported symbols
-    - transaction logs
-    - edge cases
-    Import:
-    from {module_name} import {class_name}
-    Output one complete unittest source file only.
+    - transaction log entries
+    - edge cases (sell all shares removes symbol, zero balance state)
+
+    Import: from {module_name} import {class_name}
+    Output one complete unittest source file only. No Markdown fences.
   expected_output: >
-    Complete unittest implementation.
+    Complete unit test implementation using only unittest and {module_name}.
   agent: test_engineer
-  context:
-    - design_task
-    - backend_repair_task
   output_file: output/test_{module_name}.py
 
 test_execution_task:
   description: >
-    Execute the generated unittest suite against the repaired backend module.
-    Capture:
+    Call the `verify_final_artifacts` tool with confirmation='run' to execute
+    the generated unittest suite inside the isolated Docker sandbox.
+    Your output MUST be the EXACT unmodified text returned by the tool.
+    Do NOT summarize, paraphrase, or add any commentary.
+    Capture every line including:
+    - PASSED/FAILED status prefix
     - failing tests
     - tracebacks
     - assertion failures
     - missing methods
     - runtime exceptions
-    Output raw execution results only.
   expected_output: >
-    Raw unittest execution report.
+    The exact raw string returned by the verify_final_artifacts tool, starting
+    with either 'PASSED:' or 'FAILED:', followed by the full test output.
   agent: test_engineer
-  context:
-    - test_task
   output_file: output/test_failures.txt
 
 test_fix_task:
@@ -180,26 +235,24 @@ test_fix_task:
   expected_output: >
     Corrected backend implementation.
   agent: backend_engineer
-  context:
-    - test_task
-    - test_execution_task
   output_file: output/{module_name}.py
 
 test_execution_task_rerun:
   description: >
-    Execute the generated unittest suite against the repaired backend module.
-    Capture:
+    Call the `verify_final_artifacts` tool with confirmation='run' to execute
+    the generated unittest suite inside the isolated Docker sandbox.
+    Your output MUST be the EXACT unmodified text returned by the tool.
+    Do NOT summarize, paraphrase, or add any commentary.
+    Capture every line including:
+    - PASSED/FAILED status prefix
     - failing tests
     - tracebacks
     - assertion failures
     - missing methods
     - runtime exceptions
-    Output raw execution results only.
   expected_output: >
-    Raw unittest execution report.
+    The exact raw string returned by the verify_final_artifacts tool, starting
+    with either 'PASSED:' or 'FAILED:', followed by the full test output.
   agent: test_engineer
-  context:
-    - test_fix_task
   output_file: output/test_failures.txt
-
-
+  

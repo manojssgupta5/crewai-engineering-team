@@ -32,10 +32,11 @@ Technical constraints:
 
 
 def build_inputs(
-    requirements: str = DEFAULT_REQUIREMENTS,
-    module_name: str = "account_manager",
-    class_name: str = "AccountManager",
-) -> dict[str, str]:
+        requirements: str = DEFAULT_REQUIREMENTS,
+        module_name: str = "account_manager",
+        class_name: str = "AccountManager",
+    ) -> dict[str, str]:
+    
     """Validate user-controlled identifiers and form CrewAI inputs."""
     if not requirements.strip():
         raise ValueError("requirements must not be empty")
@@ -49,11 +50,15 @@ def build_inputs(
         "class_name": class_name,
     }
 
-
 def run() -> None:
     """Generate, review, repair, and verify the sample application."""
     Path("output").mkdir(parents=True, exist_ok=True)
-    result = EngineeringTeam().crew().kickoff(inputs=build_inputs())
+
+    inputs = build_inputs()
+    # result = EngineeringTeam().crew().kickoff(inputs=inputs)
+    team = EngineeringTeam()
+    team._class_name = inputs["class_name"]
+    result = team.crew().kickoff(inputs=inputs)
     verification = verify_final_artifacts()
     Path("output/verification.md").write_text(
         f"# Final Verification\n\n```\n{verification}\n```\n",

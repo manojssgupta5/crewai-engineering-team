@@ -5,16 +5,16 @@ from pathlib import Path
 from crewai import Agent, Crew, Process, Task
 
 from crewai.project import (
-    CrewBase, 
-    agent, 
-    crew, 
+    CrewBase,
+    agent,
+    crew,
     task
 )
 
 from tools.guardrails import (
-    GuardedPythonTask, 
-    python_code_guardrail, 
-    review_output_guardrail
+    GuardedPythonTask,  
+    make_python_guardrail,
+    _FORBIDDEN_TEST_IMPORTS
 )
 
 from tools.sandboxed_test_runner import (
@@ -22,16 +22,36 @@ from tools.sandboxed_test_runner import (
 )
 
 test_runner_tool = SandboxedTestRunner()
-    
+
+_FENCE = {".py": "python", ".md": "markdown", ".txt": ""}
+
+def _inject_file(task: Task, path: Path, label: str) -> Task:
+    """Append an existing artifact's content to a task description """
+    if not path.exists():
+        return task
+    fence = _FENCE.get(path.suffix, "")
+    safe = path.read_text().replace("{", "{{").replace("}", "}}")
+    task.description += (
+        "\n\n### Existing " + label + " — read carefully before making changes:\n"
+        "```" + fence + "\n" + safe + "\n```"
+    )
+    return task
+
+def _inject_files(task: Task, *pairs: tuple) -> Task:
+    """Convenience wrapper to inject multiple files into one task."""
+    for path, label in pairs:
+        _inject_file(task, path, label)
+    return task
+
+
 @CrewBase
 class EngineeringTeam:
     """Generate, review, repair, and safely verify software artifacts."""
 
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
-    
-    #-------------------------Agents List-------------------------#
 
+    #-------------------------Agents List-------------------------#
     @agent
     def product_manager(self) -> Agent:
         return Agent(config=self.agents_config['product_manager'], reasoning=True)
@@ -49,14 +69,6 @@ class EngineeringTeam:
         return Agent(config=self.agents_config['frontend_engineer'], reasoning=True)
 
     @agent
-    def reviewer(self) -> Agent:
-        return Agent(config=self.agents_config['reviewer'], reasoning=True)
-
-    @agent
-    def fix_review_engineer(self) -> Agent:
-        return Agent(config=self.agents_config['fix_review_engineer'], reasoning=True)
-
-    @agent
     def test_engineer(self) -> Agent:
         return Agent(config=self.agents_config['test_engineer'], reasoning=True)
 
@@ -64,8 +76,8 @@ class EngineeringTeam:
     def bug_fix_engineer(self) -> Agent:
         return Agent(config=self.agents_config['bug_fix_engineer'], reasoning=True)
 
-    #-------------------------Tasks List-------------------------#
 
+    #-------------------------Tasks List-------------------------#
     @task
     def requirements_task(self) -> Task:
         return Task(config=self.tasks_config["requirements_task"])
@@ -78,118 +90,118 @@ class EngineeringTeam:
     def backend_task(self) -> Task:
         return GuardedPythonTask(
             config=self.tasks_config["backend_task"],
-            guardrail=python_code_guardrail,
-            max_retries=2,
+            guardrail=make_python_guardrail(self._class_name),
+            max_retries=3,
         )
 
     @task
     def frontend_task(self) -> Task:
         return GuardedPythonTask(
             config=self.tasks_config["frontend_task"],
-            guardrail=python_code_guardrail,
-            max_retries=2,
-        )
-
-    @task
-    def review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["review_task"],
-            guardrail=review_output_guardrail,
-            max_retries=2,
-        )
-
-    @task
-    def backend_repair_task(self) -> Task:
-        return GuardedPythonTask(
-            config=self.tasks_config["backend_repair_task"],
-            guardrail=python_code_guardrail,
-            max_retries=2,
-        )
-
-    @task
-    def frontend_repair_task(self) -> Task:
-        return GuardedPythonTask(
-            config=self.tasks_config["frontend_repair_task"],
-            guardrail=python_code_guardrail,
-            max_retries=2,
+            guardrail=make_python_guardrail(),
+            max_retries=3,
         )
 
     @task
     def test_task(self) -> Task:
         return GuardedPythonTask(
             config=self.tasks_config["test_task"],
-            guardrail=python_code_guardrail,
-            max_retries=2,
-        )
-    
+            guardrail=make_python_guardrail(
+                forbid_imports=_FORBIDDEN_TEST_IMPORTS
+            ),
+        max_retries=2,
+    )
+
     @task
     def test_execution_task(self) -> Task:
         return Task(
             config=self.tasks_config["test_execution_task"],
+            tools=[test_runner_tool],
             max_retries=2,
         )
-    
+
     @task
     def test_fix_task(self) -> Task:
         return GuardedPythonTask(
             config=self.tasks_config["test_fix_task"],
-            guardrail=python_code_guardrail,
-            max_retries=2,
+            guardrail=make_python_guardrail(self._class_name),
+            max_retries=3,
         )
-    
+
     @task
     def test_execution_task_rerun(self) -> Task:
         return Task(
             config=self.tasks_config["test_execution_task_rerun"],
+            tools=[test_runner_tool],
             max_retries=2,
         )
 
+    #--------------------BuildTasks--------------------#
     def _build_tasks(self):
         tasks = []
 
+        # All output artifact paths in one place
         requirements_file = Path("output/requirements.md")
         design_file = Path("output/design.md")
         backend_code = Path("output/account_manager.py")
         frontend_code = Path("output/app.py")
-        test_account_manager = Path("output/test_account_manager.py")
+        test_failures_file = Path("output/verification.md")
+        test_file = Path("output/test_account_manager.py")
 
         if not requirements_file.exists():
             tasks.append(self.requirements_task())
 
         if not design_file.exists():
-            tasks.append(self.design_task())
+            design = self.design_task()
+            _inject_files(
+                design,
+                (requirements_file, "requirements.md"),
+            )
+            tasks.append(design)
 
         if not backend_code.exists():
-            tasks.append(self.backend_task())
+            backend = self.backend_task()
+            _inject_files(
+                backend,
+                (design_file, "design.md")
+            )
+            tasks.append(backend)
 
         if not frontend_code.exists():
-            tasks.append(self.frontend_task())
+            frontend = self.frontend_task()
+            _inject_files(
+                frontend,
+                (design_file, "design.md")
+            )
+            tasks.append(frontend)
 
-        tasks.extend(
-            [
-                # self.requirements_task(),
-                # self.design_task(),
-                # self.backend_task(),
-                # self.frontend_task(),
-                self.review_task(),
-                self.backend_repair_task(),
-                self.frontend_repair_task(),
-            ]
+        if not test_file.exists():
+            test = self.test_task()
+            _inject_files(
+                test,
+                (design_file, "design.md"),
+                (frontend_code, "app.py"),
+                (backend_code, "account_manager.py"),
+            )
+            tasks.append(test)
+
+        tasks.append(self.test_execution_task())
+
+        test_fix = self.test_fix_task()
+        _inject_files(
+            test_fix,
+            (backend_code, "account_manager.py"),
+            (test_file, "test_account_manager.py"),
+            (frontend_code, "app.py"),
+            (test_failures_file, "verification.md"),
         )
+        tasks.append(test_fix)
 
-        if not test_account_manager.exists():
-            tasks.append(self.test_task())
+        tasks.append(self.test_execution_task_rerun())
 
-        tasks.extend(
-            [
-                #self.test_task(),
-                self.test_execution_task(),
-                self.test_fix_task(),
-                self.test_execution_task_rerun(),
-            ]
-        )
         return tasks
 
+    #--------------------Crew--------------------#
     @crew
     def crew(self) -> Crew:
         """Create the sequential engineering pipeline."""

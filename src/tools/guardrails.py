@@ -11,46 +11,47 @@ _FENCED_PYTHON = re.compile(
     r"```(?:python|py)?[ \t]*\r?\n(?P<source>.*?)```",
     flags=re.IGNORECASE | re.DOTALL,
 )
-_REVIEW_SECTIONS = ("summary", "blocking issues", "non-blocking issues")
 
+_FORBIDDEN_TEST_IMPORTS = {"gradio", "flask", "fastapi", "requests", "django"}
 
-def extract_python_source(raw: str) -> str:
-    """Return Python source from raw or fenced model output."""
-    match = _FENCED_PYTHON.search(raw)
-    source = match.group("source") if match else raw
-    return source.strip() + "\n"
+def make_python_guardrail(class_name: str | None = None, forbid_imports: set[str] | None = None):
+    def _guardrail(output: TaskOutput) -> Tuple[bool, Any]:
+        match = _FENCED_PYTHON.search(output.raw)
+        source = (match.group("source") if match else output.raw).strip() + "\n"
 
+        try:
+            tree = ast.parse(source)
+        except SyntaxError as exc:
+            location = f"line {exc.lineno}" if exc.lineno else "unknown line"
+            return False, f"Output is not valid Python ({location}): {exc.msg}"
 
-def python_code_guardrail(output: TaskOutput) -> Tuple[bool, Any]:
-    """Only permit syntactically valid Python to be persisted as source code."""
-    source = extract_python_source(output.raw)
-    try:
-        ast.parse(source)
-    except SyntaxError as exc:
-        location = f"line {exc.lineno}" if exc.lineno else "unknown line"
-        return False, f"Output is not valid Python ({location}): {exc.msg}"
-    return True, source
+        if class_name is not None:
+            defined = [n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+            if class_name not in defined:
+                return (
+                    False,
+                    f"Output must define `class {class_name}` at module level. "
+                    f"Found: {defined or 'none'}. Rewrite to export this class.",
+                )
 
+        if forbid_imports:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    bad = [a.name for a in node.names if a.name.split(".")[0] in forbid_imports]
+                elif isinstance(node, ast.ImportFrom):
+                    bad = [node.module] if node.module and node.module.split(".")[0] in forbid_imports else []
+                else:
+                    continue
+                if bad:
+                    return (
+                        False,
+                        f"Forbidden import(s) found: {bad}. "
+                        f"Test files must only use unittest and {'{module_name}'}.",
+                    )
 
-def review_output_guardrail(output: TaskOutput) -> Tuple[bool, Any]:
-    """Reject non-actionable review prose so CrewAI retries the reviewer."""
-    raw = output.raw.strip()
-    normalized = raw.lower()
-    missing = [section for section in _REVIEW_SECTIONS if section not in normalized]
-    if missing:
-        return False, "Review must contain sections: Summary, Blocking Issues, and Non-Blocking Issues."
+        return True, source
 
-    repair_required = "repair_required" in normalized
-    no_changes = "no_changes_required" in normalized
-    if repair_required == no_changes:
-        return False, "Review must state exactly one decision: REPAIR_REQUIRED or NO_CHANGES_REQUIRED."
-    if repair_required and not all(
-        field in normalized for field in ("severity", "artifact", "repair")
-    ):
-        return False, "A repair-required review must include severity, artifact, and repair instructions."
-    if no_changes and "static review found no" not in normalized:
-        return False, "A no-changes review must explicitly state that static review found no defects."
-    return True, raw + "\n"
+    return _guardrail
 
 
 class GuardedPythonTask(Task):
