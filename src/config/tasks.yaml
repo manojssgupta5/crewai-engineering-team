@@ -170,32 +170,53 @@ frontend_task:
 
 test_task:
   description: >
-    Write deterministic unittest tests for the backend module ONLY.
+    description: >
+      Write deterministic unittest tests for the backend module ONLY.
 
-    ABSOLUTE IMPORT RULES — violations will cause test collection to fail:
-    1. Only allowed imports are:
-       - import unittest
-       - from {module_name} import {class_name}
-       - Standard library modules only (datetime, decimal, etc.)
-    2. Do NOT import gradio, requests, flask, or ANY third-party package.
-    3. Do NOT import app, app.py, or any frontend module.
-    4. Do NOT import anything that requires a network, UI, or external service.
-    5. The test file must run successfully with:
-       python -m unittest test_{module_name} --network none
+      ABSOLUTE IMPORT RULES — violations will cause test collection to fail:
+      1. Only allowed imports are:
+         - import unittest
+         - from {module_name} import {class_name}
+         - Standard library modules only (datetime, decimal, etc.)
+      2. Do NOT import gradio, requests, flask, or ANY third-party package.
+      3. Do NOT import app, app.py, or any frontend module.
+      4. Do NOT import anything that requires a network, UI, or external service.
+      5. The test file must run successfully with:
+         python -m unittest test_{module_name} --network none
 
-    WHAT TO TEST — only the backend {class_name} public API:
-    - account creation (valid name, empty name)
-    - deposits (valid amount, zero, negative)
-    - withdrawals (sufficient funds, insufficient funds)
-    - buy/sell operations (valid, insufficient funds, insufficient shares)
-    - holdings state after buy and sell
-    - valuation and profit/loss in get_report
-    - unsupported symbols
-    - transaction log entries
-    - edge cases (sell all shares removes symbol, zero balance state)
+      PREREQUISITE STEP: For every test case, execute any required setup before performing operations that depend on that setup.
+
+      WHAT TO TEST — only the backend {class_name} public API:
+      - account creation (valid name, empty name)
+      - deposits (valid amount, zero, negative)
+      - withdrawals (sufficient funds, insufficient funds)
+      - buy/sell operations (valid, insufficient funds, insufficient shares)
+      - holdings state after buy and sell
+      - valuation and profit/loss in get_report
+      - unsupported symbols
+      - transaction log entries
+      - edge cases (sell all shares removes symbol, zero balance state)
+
+      Import: from {module_name} import {class_name}
+      Output one complete unittest source file only. No Markdown fences.
 
     Import: from {module_name} import {class_name}
     Output one complete unittest source file only. No Markdown fences.
+
+    PREREQUISITE AND STATE RULES:
+    Before executing any operation, verify and establish all required preconditions.
+    Do not assume entities, accounts, users, configs, files, or state already exist.
+    If an operation depends on prior initialization, setup, authentication, configuration, or resource creation, perform those steps explicitly inside the test.
+    Every test must create and manage its own independent state.
+    Tests must not rely on execution order or side effects from other tests.
+    Cleanup any created state if persistence exists.
+
+    TEST GENERATION RULE:
+    For each public API method:
+      Identify required dependencies and preconditions
+      Create necessary setup state, do not assume anything will be step up before running test
+      Derive assertions from actual backend logic, constants, pricing rules, and state transitions.
+      Avoid hardcoded assumptions unless explicitly defined in the backend implementation.
   expected_output: >
     Complete unit test implementation using only unittest and {module_name}.
   agent: test_engineer
@@ -230,8 +251,10 @@ test_fix_task:
     - validation mismatches
     - state handling bugs
     - API contract issues
-    Preserve architecture unless required.
+    - Review Error and address them with appropriate fixes
     Output one corrected Python source file only.
+
+    Do not change any code when there no test failure report with FAILED.
   expected_output: >
     Corrected backend implementation.
   agent: backend_engineer

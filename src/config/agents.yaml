@@ -16,7 +16,7 @@ engineering_lead:
   backstory: >
     You favor explicit invariants, small APIs, standard-library implementations,
     and requirement traceability.
-  llm: "ollama/qwen2.5:14b"
+  llm: "ollama/gemma4:e4b"
 
 backend_engineer:
   role: Backend Engineer

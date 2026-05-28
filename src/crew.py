@@ -145,10 +145,10 @@ class EngineeringTeam:
         design_file = Path("output/design.md")
         backend_code = Path("output/account_manager.py")
         frontend_code = Path("output/app.py")
-        test_failures_file = Path("output/verification.md")
         test_file = Path("output/test_account_manager.py")
+        test_failures_file = Path("output/test_failures.txt")
 
-        if not requirements_file.exists():
+        if not requirements_file.exists():   
             tasks.append(self.requirements_task())
 
         if not design_file.exists():
@@ -185,20 +185,28 @@ class EngineeringTeam:
             )
             tasks.append(test)
 
-        tasks.append(self.test_execution_task())
+        if not test_failures_file.exists():
+            test_execution_task = self.test_execution_task()
+            _inject_files(
+                test_execution_task,
+                (frontend_code, "app.py"),
+                (backend_code, "account_manager.py"),
+                (test_file, "test_account_manager.py"),
+            )
+        tasks.append(test_execution_task)
 
         test_fix = self.test_fix_task()
         _inject_files(
             test_fix,
-            (backend_code, "account_manager.py"),
-            (test_file, "test_account_manager.py"),
+            (test_failures_file, "test_failures.txt"),
             (frontend_code, "app.py"),
-            (test_failures_file, "verification.md"),
+            (backend_code, "account_manager.py"),
+            (test_file, "test_account_manager.py"),    
         )
         tasks.append(test_fix)
 
         tasks.append(self.test_execution_task_rerun())
-
+        
         return tasks
 
     #--------------------Crew--------------------#
